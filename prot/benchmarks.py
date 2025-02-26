@@ -3,11 +3,14 @@ import pandas as pd
 import numpy as np
 from .sensitivity import Sensitivity, sandwich
 import h5py
+from .nuclear_data import Covariances
 
 class Benchmark:
     """Base class for benchmarks."""
 
-    def __init__(self, sens_path=None, res_path=None):
+    def __init__(self, 
+                 results_path=None,
+                 sens_path=None, res_path=None):
         """
         Initialize the Benchmark class.
 
@@ -20,6 +23,7 @@ class Benchmark:
         """
         self.sens_path = sens_path
         self.res_path = res_path
+        self.results_path = results_path
         self.title = None
         self.S = None
         self.K_exp = None  
@@ -53,7 +57,7 @@ class Benchmark:
         """
         print(f"Title: {self.title}\n Bias={self.K_calc-self.K_exp:.5f} +/- {np.sqrt(self.K_calc_std**2+self.K_exp_std**2):.5f}")
 
-    def set_experimental_results(self, path: str = r"C:\Users\dhouben\Documents\Benchmarks\exp_results.xlsx"):
+    def set_experimental_results(self):
         """
         Read experimental results from ICSBEP database.
 
@@ -62,7 +66,7 @@ class Benchmark:
         path : str, optional
             Path to the experimental results file. Default is 'C:\\Users\\dhouben\\Documents\\Benchmarks\\exp_results.xlsx'.
         """
-        df = pd.read_excel(path, index_col='title')
+        df = pd.read_excel(self.results_path, index_col='title')
         self.K_exp = df.loc[self.title]['E. Mean']
         self.K_exp_std = df.loc[self.title]['E. Std']
         
@@ -88,7 +92,7 @@ class Benchmark:
             grp.attrs['K_calc_std'] = self.K_calc_std
 
         # Save sensitivity DataFrame using pandas to_hdf
-        self.S.to_hdf(file_path, f'{self.title}/sensitivity', mode='a', format='table')
+        self.S.to_hdf(path_or_buf=file_path, key=f'{self.title}/sensitivity', mode='a', format='table')
 
     @classmethod
     def from_hdf5(cls, file_path, title):
@@ -124,6 +128,26 @@ class Benchmark:
         benchmark.S = pd.read_hdf(file_path, f'{title}/sensitivity')
 
         return benchmark
+    
+    @classmethod
+    def from_sens_res(cls, sens_path, res_path):
+        """
+        Create a Benchmark instance from sensitivity and results files.
+
+        Parameters
+        ----------
+        sens_path : str
+            Path to the sensitivity file.
+        res_path : str
+            Path to the results file.
+
+        Returns
+        -------
+        Benchmark
+            A new Benchmark instance with the loaded data.
+        """
+        benchmark = cls(sens_path, res_path)
+        return benchmark
 
 class BenchmarkSuite:
     """Class for running a suite of benchmarks."""
@@ -153,6 +177,22 @@ class BenchmarkSuite:
         self.V_exp = np.diag([benchmark.K_exp_std for benchmark in self.benchmarks])
         self.K_prior = pd.DataFrame({'K_prior': [benchmark.K_calc for benchmark in self.benchmarks]}, 
                        index=[benchmark.title for benchmark in self.benchmarks])
+        
+    def get_benchmark(self, title):
+        """
+        Get a benchmark from the suite.
+
+        Parameters
+        ----------
+        title : str
+            Title of the benchmark to be retrieved.
+
+        Returns
+        -------
+        Benchmark
+            Benchmark object.
+        """
+        return [benchmark for benchmark in self.benchmarks if benchmark.title == title][0]
         
     def remove_benchmark(self, title):
         """
@@ -320,3 +360,23 @@ class BenchmarkSuite:
         print(f"Condition Number: {np.linalg.cond(self.C_inv.values):.2f}")
         
         return res
+    
+    def get_covariances(self, nd_path):
+        """
+        Load covariance matrices from a nuclear data file.
+
+        Parameters
+        ----------
+        nd_path : str
+            Path to the nuclear data file.
+
+        Returns
+        -------
+        dict
+            Dictionary of covariance matrices.
+        """
+        covariances = {}
+        for zai in self.ZAIs:
+            covariances[zai] = Covariances.from_hdf5(nd_path, zai).fillna(0)
+            if covariances[zai].empty:
+                covariances[zai] = pd.DataFrame(0, index=[zai], columns=[zai])
