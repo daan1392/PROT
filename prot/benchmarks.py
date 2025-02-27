@@ -178,6 +178,13 @@ class BenchmarkSuite:
         self.K_prior = pd.DataFrame({'K_prior': [benchmark.K_calc for benchmark in self.benchmarks]}, 
                        index=[benchmark.title for benchmark in self.benchmarks])
         
+    def from_hdf5(file_path=None, titles=None):
+        if not titles:
+            with h5py.File(file_path, 'r') as f:
+                titles = list(f.keys())
+            
+        return BenchmarkSuite([Benchmark.from_hdf5(file_path, title) for title in titles])
+
     def get_benchmark(self, title):
         """
         Get a benchmark from the suite.
@@ -287,13 +294,9 @@ class BenchmarkSuite:
         """
         K_exp = self.K_exp['K_exp']
 
-        if K is None:
-            K = self.K_prior['K_prior']
+        K = self.K_prior['K_prior'] if K is None else K
 
-        if covariances is None:
-            C_inv = self.calculate_C_inv()
-        else:
-            C_inv = self.calculate_C_inv(covariances)
+        C_inv = self.calculate_C_inv() if covariances is None else self.calculate_C_inv(covariances)
             
         X = (K - K_exp).T @ C_inv @ (K - K_exp) / C_inv.shape[0]
         return X
@@ -312,9 +315,14 @@ class BenchmarkSuite:
         dict
             Dictionary containing the results of the GLS adjustment.
         """
-        self.calculate_V_prior(covariances)
-        self.calculate_C_inv()
 
+        V_prior_y_N = {}
+        for zai in self.ZAIs:
+            V_prior_y_N[zai] = sandwich(self.S.loc[zai], covariances[zai], self.S.loc[zai])
+            V_prior_y_N[zai].columns = V_prior_y_N[zai].index
+        V_prior_y = pd.concat(V_prior_y_N).groupby(level=1).sum() 
+        
+        self.C_inv = pd.DataFrame(np.linalg.pinv(V_prior_y + self.V_exp), V_prior_y.columns, V_prior_y.index)
         A_N = {}
         delta_xs_N = {}
         del_K_N = {}
