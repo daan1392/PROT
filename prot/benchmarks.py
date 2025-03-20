@@ -4,6 +4,7 @@ import numpy as np
 from .sensitivity import Sensitivity, sandwich
 import h5py
 from .nuclear_data import Covariances
+from sandy import zam2latex
 
 class Benchmark:
     """Base class for benchmarks."""
@@ -35,6 +36,7 @@ class Benchmark:
             self.set_simulation_results()
             self.set_sensitivity()
             self.set_experimental_results()
+            self.zais = self.S.index.get_level_values('ZAI').unique()
 
     def set_sensitivity(self):
         """
@@ -148,6 +150,54 @@ class Benchmark:
         """
         benchmark = cls(sens_path, res_path)
         return benchmark
+    
+    # def get_nd_std_decomposed(self, covariances):
+
+    def plot_sensitivity(self, zais, perts, color=None, label=None, ax=None):
+        """
+        Return a plot of the sensitivity profile normalized by unit lethargy
+        
+        Parameters
+        ----------
+        zais : list
+            List of zais to be included in the plot.
+        perts : list
+            List of perts to be included in the plot.
+        color : str (optional)
+            Color for the requested curve, if None python will choose.
+        label : str (optional)
+            Label for the plot.
+        ax : plt.Axes
+            Ax for the plot to be displayed.
+        """
+        if not label:
+            label = self.title
+
+        energies = pd.IntervalIndex.from_arrays(
+                    self.S.index.get_level_values('E_min_eV').unique(),
+                    self.S.index.get_level_values('E_max_eV').unique()
+                )
+        lethargyWidths = np.log(energies.right / energies.left)
+        for zai in zais:
+            for pert in perts:
+                ks = self.S.loc[zai, pert]        
+
+                sens = ks.iloc[:,0]  / lethargyWidths
+                
+                unc = ks.iloc[:,1]  * abs(sens)
+
+                ax.step(energies.left, sens, where='pre', linewidth=1, color=color, label=f'{label} - {zam2latex(zai)} - {pert}')
+                ax.fill_between(energies.left, sens-unc, sens+unc, step='pre', alpha=0.15, color=color)
+
+        ax.set(xscale='log', xlabel='Energy (eV)', ylabel='Sensitivity to keff per unit Lethargy')
+        ax.grid(axis='y', which='major', linestyle='-', color='gray', linewidth=0.5)
+
+        ax.grid(axis='x', which='major', linestyle='-', color='gray', linewidth=0.5)
+        ax.grid(axis='x', which='minor', linestyle=':', color='gray', linewidth=0.5)
+        
+        ax.minorticks_on()
+        ax.legend()
+        return ax
 
 class BenchmarkSuite:
     """Class for running a suite of benchmarks."""
@@ -171,12 +221,13 @@ class BenchmarkSuite:
         Update the suite dataframes and matrices.
         """
         self.S = pd.concat([benchmark.S.iloc[:,0].to_frame() for benchmark in self.benchmarks], axis=1).fillna(0)
+        self.titles = [benchmark.title for benchmark in self.benchmarks]
         self.ZAIs = self.S.index.get_level_values('ZAI').unique()
         self.K_exp = pd.DataFrame({'K_exp': [benchmark.K_exp for benchmark in self.benchmarks]}, 
-                       index=[benchmark.title for benchmark in self.benchmarks])
-        self.V_exp = np.diag([benchmark.K_exp_std for benchmark in self.benchmarks])
+                       index=self.titles)
+        self.V_exp = pd.DataFrame(np.diag([benchmark.K_exp_std**2 for benchmark in self.benchmarks]), index=self.titles, columns=self.titles)
         self.K_prior = pd.DataFrame({'K_prior': [benchmark.K_calc for benchmark in self.benchmarks]}, 
-                       index=[benchmark.title for benchmark in self.benchmarks])
+                       index=self.titles)
         
     def from_hdf5(file_path=None, titles=None):
         if not titles:
@@ -248,6 +299,24 @@ class BenchmarkSuite:
         self.V_prior = pd.concat({
             zai: sandwich(g.reset_index(level="ZAI", drop=True), covariances[zai], g.reset_index(level="ZAI", drop=True)) for zai, g in self.S.groupby("ZAI")
         }).groupby(level=1).sum()
+
+    def get_nd_std(self):
+        """
+        Return a pandas.Series object where the index is the benchmark name,
+        the value is the standard deviation coming from the nuclear data.
+        
+        Returns
+        -------
+        pd.Series
+            Nuclear data standard deviation
+        """
+        if not self.V_prior.empty:
+            return pd.Series(np.sqrt(np.diag(self.V_prior)), index=self.V_prior.index).rename("Prior ND std")
+        else:
+            # Raise warning
+            print("calculate_V_prior(covariance) not yet performed")
+            return None
+
 
     def calculate_C_inv(self, covariances=None):
         """

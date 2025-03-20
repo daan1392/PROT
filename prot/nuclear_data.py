@@ -106,7 +106,7 @@ class Covariances(pd.DataFrame):
                 sparse_data = store[f'zai_{zai}/covariances/data']
             else:
                 print(f"No covariance data found for {zai}, returning empty df")
-
+                
                 return pd.DataFrame()
             
             attrs = store.get_storer(f'zai_{zai}/covariances/data').attrs

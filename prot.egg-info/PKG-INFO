@@ -1,0 +1,11 @@
+Metadata-Version: 2.2
+Name: prot
+Version: 0.1.0
+Author: Daan Houben
+License-File: LICENSE
+Requires-Dist: h5py
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: serpentTools
+Dynamic: author
+Dynamic: requires-dist
