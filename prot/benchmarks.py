@@ -42,7 +42,7 @@ class Benchmark:
         """
         Read sensitivities.
         """
-        self.S = Sensitivity.from_sens0(self.sens_path, self.title)
+        self.S = Sensitivity(Sensitivity.from_sens0(self.sens_path, self.title))
 
     def set_simulation_results(self):
         """
@@ -153,52 +153,6 @@ class Benchmark:
     
     # def get_nd_std_decomposed(self, covariances):
 
-    def plot_sensitivity(self, zais, perts, color=None, label=None, ax=None):
-        """
-        Return a plot of the sensitivity profile normalized by unit lethargy
-        
-        Parameters
-        ----------
-        zais : list
-            List of zais to be included in the plot.
-        perts : list
-            List of perts to be included in the plot.
-        color : str (optional)
-            Color for the requested curve, if None python will choose.
-        label : str (optional)
-            Label for the plot.
-        ax : plt.Axes
-            Ax for the plot to be displayed.
-        """
-        if not label:
-            label = self.title
-
-        energies = pd.IntervalIndex.from_arrays(
-                    self.S.index.get_level_values('E_min_eV').unique(),
-                    self.S.index.get_level_values('E_max_eV').unique()
-                )
-        lethargyWidths = np.log(energies.right / energies.left)
-        for zai in zais:
-            for pert in perts:
-                ks = self.S.loc[zai, pert]        
-
-                sens = ks.iloc[:,0]  / lethargyWidths
-                
-                unc = ks.iloc[:,1]  * abs(sens)
-
-                ax.step(energies.left, sens, where='pre', linewidth=1, color=color, label=f'{label} - {zam2latex(zai)} - {pert}')
-                ax.fill_between(energies.left, sens-unc, sens+unc, step='pre', alpha=0.15, color=color)
-
-        ax.set(xscale='log', xlabel='Energy (eV)', ylabel='Sensitivity to keff per unit Lethargy')
-        ax.grid(axis='y', which='major', linestyle='-', color='gray', linewidth=0.5)
-
-        ax.grid(axis='x', which='major', linestyle='-', color='gray', linewidth=0.5)
-        ax.grid(axis='x', which='minor', linestyle=':', color='gray', linewidth=0.5)
-        
-        ax.minorticks_on()
-        ax.legend()
-        return ax
-
 class BenchmarkSuite:
     """Class for running a suite of benchmarks."""
 
@@ -308,7 +262,7 @@ class BenchmarkSuite:
         Returns
         -------
         pd.Series
-            Nuclear data standard deviation
+            Nuclear data standard deviation.
         """
         if not self.V_prior.empty:
             return pd.Series(np.sqrt(np.diag(self.V_prior)), index=self.V_prior.index).rename("Prior ND std")

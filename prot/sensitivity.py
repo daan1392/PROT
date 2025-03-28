@@ -1,10 +1,13 @@
 import pandas as pd
 import numpy as np
 import serpentTools
+from sandy import zam2latex
+import matplotlib.pyplot as plt
 
 MT_translation_dict = {
     'mt 2 xs': (2),
     'mt 4 xs': (4),
+    'mt 16 xs': (16),
     'mt 18 xs': (18),
     'mt 102 xs': (102),
     'nubar prompt': (456),
@@ -60,18 +63,19 @@ class Sensitivity(pd.DataFrame):
         pertlist = pertlist or sens.perts
 
         records = []
-        for zai in zailist:
-            for pert in pertlist:
-                for i in range(len(sens.energies) - 1):
-                    record = {
-                        'ZAI': zai,
-                        'MT': pert,
-                        'E_min_eV': np.round(sens.energies[i] * 1e6, decimals=6),
-                        'E_max_eV': np.round(sens.energies[i + 1] * 1e6, decimals=6),
-                        title: sens.sensitivities["keff"][sens.materials["total"]][sens.zais[zai]][sens.perts[pert]][i, 0],
-                        f'{title}_std' : sens.sensitivities["keff"][sens.materials["total"]][sens.zais[zai]][sens.perts[pert]][i, 1]
-                    }
-                    records.append(record)
+        for material in materiallist:
+            for zai in zailist:
+                for pert in pertlist:
+                    for i in range(len(sens.energies) - 1):
+                        record = {
+                            'ZAI': zai,
+                            'MT': pert,
+                            'E_min_eV': np.round(sens.energies[i] * 1e6, decimals=6),
+                            'E_max_eV': np.round(sens.energies[i + 1] * 1e6, decimals=6),
+                            title: sens.sensitivities["keff"][sens.materials[material]][sens.zais[zai]][sens.perts[pert]][i, 0],
+                            f'{title}_std' : sens.sensitivities["keff"][sens.materials[material]][sens.zais[zai]][sens.perts[pert]][i, 1]
+                        }
+                        records.append(record)
 
         df = pd.DataFrame(records)
         df.set_index(['ZAI', 'MT', 'E_min_eV', 'E_max_eV'], inplace=True)
@@ -79,6 +83,57 @@ class Sensitivity(pd.DataFrame):
             df.index.levels[1].map(MT_translation_dict), level='MT'
         )
         return Sensitivity(df)
+    
+    def plot_sensitivity(self, zais, perts, color=None, label=None, ax=None):
+        """
+        Return a plot of the sensitivity profile normalized by unit lethargy
+        
+        Parametersb
+        ----------
+        zais : list
+            List of zais to be included in the plot.
+        perts : list
+            List of perts to be included in the plot.
+        color : str (optional)
+            Color for the requested curve, if None python will choose.
+        label : str (optional)
+            Label for the plot.
+        ax : plt.Axes, optional
+            Ax for the plot to be displayed. If None, a new figure and axis will be created.
+        """
+        if not label:
+            label = self.columns[0]
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        energies = pd.IntervalIndex.from_arrays(
+                    self.index.get_level_values('E_min_eV').unique(),
+                    self.index.get_level_values('E_max_eV').unique()
+                )
+        lethargyWidths = np.log(energies.right / energies.left)
+        for zai in zais:
+            for pert in perts:
+                ks = self.loc[zai, pert]        
+
+                sens = ks.iloc[:,0]  / lethargyWidths
+                
+                unc = ks.iloc[:,1]  * abs(sens)
+
+                ax.step(energies.left, sens, where='pre', linewidth=1, color=color, label=f'{label} - {zam2latex(zai)} - {pert}')
+                ax.fill_between(energies.left, sens-unc, sens+unc, step='pre', alpha=0.15, color=color)
+
+        ax.set(xscale='log', xlabel='Energy (eV)', ylabel='Sensitivity to keff per unit Lethargy')
+        ax.grid(axis='y', which='major', linestyle='-', color='gray', linewidth=0.5)
+
+        ax.grid(axis='x', which='major', linestyle='-', color='gray', linewidth=0.5)
+        ax.grid(axis='x', which='minor', linestyle=':', color='gray', linewidth=0.5)
+        
+        ax.minorticks_on()
+        ax.legend()
+        if ax is None:
+            plt.show()
+        return ax
     
 def sandwich(s1, cov, s2):
     """

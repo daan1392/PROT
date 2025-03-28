@@ -26,10 +26,18 @@ class CrossSections(pd.DataFrame):
         """Load CrossSections data from HDF5 file."""
         zai = str(zai)
         with pd.HDFStore(file_path) as store:
+            # Check if the zai exists in the file
+            if f'zai_{zai}/cross_sections' not in store:
+                return CrossSections()  # Return an empty CrossSections object
+            
             # Accessing the xs data
             xs = store[f'zai_{zai}/cross_sections']
-            if mts:
-                return CrossSections(xs.loc[mts])
+
+            if xs.empty:
+                return CrossSections(xs)
+            elif mts:
+                mts_av = [mt for mt in mts if mt in xs.index.get_level_values('MT').unique()]
+                return CrossSections(xs.loc[mts_av])
             else:
                 return CrossSections(xs)
 
